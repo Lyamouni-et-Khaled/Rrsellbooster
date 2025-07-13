@@ -1,0 +1,35 @@
+
+[
+  {
+    "id": "xp_booster_25_24h",
+    "name": "Booster d'XP Personnel",
+    "icon": "rocket",
+    "description": "Augmente tous vos gains d'XP de 25% pendant 24 heures. Non cumulable.",
+    "cost": 500,
+    "unit": "Crédits"
+  },
+  {
+    "id": "commission_booster_10_3d",
+    "name": "Booster de Commission",
+    "icon": "trending_up",
+    "description": "Augmente votre taux de commission d'affiliation de 10% (additif) pendant 3 jours.",
+    "cost": 1000,
+    "unit": "Crédits"
+  },
+  {
+    "id": "xp_purchase",
+    "name": "Achat d'XP Direct",
+    "icon": "level_up",
+    "description": "Achetez l'XP manquant pour votre prochain niveau directement avec vos crédits. Le coût est dynamique.",
+    "cost": -1,
+    "unit": "Crédits / XP"
+  },
+  {
+    "id": "lottery_ticket",
+    "name": "Ticket de Loterie Hebdo",
+    "icon": "ticket",
+    "description": "Achetez un ticket pour la loterie hebdomadaire exclusive aux crédits. Plus de tickets = plus de chances !",
+    "cost": 50,
+    "unit": "Crédits"
+  }
+]

@@ -1,0 +1,29 @@
+
+{
+  "faqs": [
+    {
+      "question": "Quels sont les moyens de paiement ?",
+      "answer": "Nous acceptons les paiements via PayPal. Les instructions précises te sont données lorsque tu lances une commande avec `/produit`."
+    },
+    {
+      "question": "Comment fonctionnent les remboursements ?",
+      "answer": "Pour les produits numériques comme les formations ou les comptes, il n'y a pas de remboursement possible une fois le produit livré, sauf en cas de problème technique prouvé de notre part."
+    },
+    {
+      "question": "Comment je reçois mes achats ?",
+      "answer": "Après validation de ton paiement par le staff, la livraison est effectuée par message privé. Pour les produits numériques, tu recevras un lien ou des identifiants directement."
+    },
+    {
+      "question": "C'est quoi le prix des V-Bucks ?",
+      "answer": "Pour connaître le prix de tous nos produits, tu peux utiliser la commande `/catalogue` et sélectionner la catégorie 'Gaming'."
+    },
+    {
+      "question": "Comment gagner de l'XP ?",
+      "answer": "Tu peux gagner de l'XP en étant actif sur le serveur (envoi de messages), en invitant des amis, et en participant aux défis de l'IA. Utilise la commande `/gamification-info` pour tous les détails !"
+    },
+    {
+      "question": "Comment retirer mes gains en argent réel ?",
+      "answer": "C'est le cœur de notre système ! Une fois que vous avez assez de crédit boutique (gagné via l'affiliation), vous pouvez utiliser la commande `/cashout`. Votre niveau sur le serveur détermine le montant que vous pouvez retirer chaque semaine et le taux de conversion de votre crédit en euros. Plus votre niveau est élevé, plus les conditions sont avantageuses ! Continuez de progresser pour maximiser vos gains."
+    }
+  ]
+}

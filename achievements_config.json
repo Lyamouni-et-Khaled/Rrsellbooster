@@ -1,0 +1,93 @@
+
+[
+  {
+    "id": "first_message",
+    "name": "Brise-Glace",
+    "description": "A envoyé son premier message sur le serveur.",
+    "trigger": {
+      "type": "message_count",
+      "value": 1
+    },
+    "reward_xp": 25
+  },
+  {
+    "id": "message_milestone_1",
+    "name": "Pipelette",
+    "description": "A envoyé 100 messages.",
+    "trigger": {
+      "type": "message_count",
+      "value": 100
+    },
+    "reward_xp": 100
+  },
+  {
+    "id": "message_milestone_2",
+    "name": "Pilier de la Communauté",
+    "description": "A envoyé 500 messages.",
+    "trigger": {
+      "type": "message_count",
+      "value": 500
+    },
+    "reward_xp": 250
+  },
+  {
+    "id": "level_milestone_1",
+    "name": "Vétéran",
+    "description": "A atteint le niveau 10.",
+    "trigger": {
+      "type": "level",
+      "value": 10
+    },
+    "reward_xp": 150
+  },
+  {
+    "id": "level_milestone_2",
+    "name": "Légende Vivante",
+    "description": "A atteint le niveau 25.",
+    "trigger": {
+      "type": "level",
+      "value": 25
+    },
+    "reward_xp": 500
+  },
+  {
+    "id": "first_purchase",
+    "name": "Client Précieux",
+    "description": "A effectué son tout premier achat.",
+    "trigger": {
+      "type": "purchase_count",
+      "value": 1
+    },
+    "reward_xp": 100
+  },
+  {
+    "id": "purchase_milestone_1",
+    "name": "Super Client",
+    "description": "A effectué 5 achats.",
+    "trigger": {
+      "type": "purchase_count",
+      "value": 5
+    },
+    "reward_xp": 300
+  },
+  {
+    "id": "first_affiliate_sale",
+    "name": "Apporteur d'Affaires",
+    "description": "Votre premier filleul a effectué un achat, vous rapportant une commission !",
+    "trigger": {
+      "type": "affiliate_sale_count",
+      "value": 1
+    },
+    "reward_xp": 250
+  },
+  {
+    "id": "first_cashout",
+    "name": "Premier Salaire",
+    "description": "A converti pour la première fois son crédit boutique en argent réel.",
+    "trigger": {
+      "type": "cashout_count",
+      "value": 1
+    },
+    "reward_xp": 500
+  }
+]
