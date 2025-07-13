@@ -13,7 +13,13 @@ from typing import List, Dict, Any, Optional
 import traceback
 import re
 
-# Dépendance pour la génération d'image
+# --- Dépendances Critiques ---
+# Placer l'importation de Firestore ici, en dehors du try/except,
+# pour qu'une erreur d'importation soit immédiatement visible et arrête le bot.
+from google.cloud import firestore
+from google.cloud.firestore_v1.transaction import async_transactional
+
+# --- Dépendances Optionnelles ---
 try:
     from PIL import Image, ImageDraw, ImageFont, ImageOps
     import io
@@ -21,22 +27,12 @@ try:
 except ImportError:
     IMAGING_AVAILABLE = False
 
-
-# --- Configuration de l'IA Gemini ---
 try:
     import google.generativeai as genai
     from google.generativeai.types import GenerationConfig
     AI_AVAILABLE = True
 except ImportError:
     AI_AVAILABLE = False
-
-# --- Configuration de Firestore ---
-try:
-    from google.cloud import firestore
-    from google.cloud.firestore_v1.transaction import async_transactional
-    FIRESTORE_AVAILABLE = True
-except ImportError:
-    FIRESTORE_AVAILABLE = False
 
 
 # --- Classes pour les Vues d'Interaction ---
@@ -307,12 +303,10 @@ class ManagerCog(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.db = None
-        if FIRESTORE_AVAILABLE:
-            self.db = firestore.AsyncClient()
-        else:
-            print("ERREUR CRITIQUE: google-cloud-firestore non installé. Le bot ne peut pas fonctionner.")
-
+        # L'importation de Firestore est maintenant critique.
+        # Si elle échoue, le bot ne démarrera pas, ce qui est le comportement attendu.
+        self.db = firestore.AsyncClient()
+        
         self.config = {}
         self.products = []
         self.achievements = []
