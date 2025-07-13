@@ -5,6 +5,7 @@ from discord import app_commands
 from typing import Optional
 import random
 from google.cloud import firestore
+from google.cloud.firestore_v1.transaction import async_transactional
 
 from .manager_cog import ManagerCog
 
@@ -23,7 +24,7 @@ class LotteryCog(commands.Cog):
 
     async def _join_lottery_transaction(self, user_id_str: str, display_name: str, cost: float):
         """Transactional logic for joining the lottery."""
-        @firestore.async_transactional
+        @async_transactional
         async def tx_logic(transaction: firestore.AsyncTransaction):
             user_ref = self.manager.db.collection('users').document(user_id_str)
             user_data = (await user_ref.get(transaction=transaction)).to_dict()
