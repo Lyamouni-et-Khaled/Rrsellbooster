@@ -40,7 +40,7 @@ class GuildInviteView(discord.ui.View):
             guild_ref = self.manager.db.collection('guilds').document(self.guild_id)
             guild_data = (await guild_ref.get()).to_dict()
             
-            if len(guild_data.get('members', [])) >= self.manager.config["GUILD_SYSTEM"]["MAX_MEMBERS"]:
+            if len(guild_data.get('members', [])) >= self.manager.config.get("GUILD_SYSTEM", {}).get("MAX_MEMBERS", 10):
                  original_embed.description = f"La guilde **{self.guild_name}** est pleine."
                  original_embed.color = discord.Color.orange()
                  await interaction.response.edit_message(embed=original_embed, view=self)
@@ -195,18 +195,19 @@ class GuildCog(commands.Cog):
         
         owner = await self.bot.fetch_user(int(guild_data['owner_id']))
         created_dt = datetime.fromisoformat(guild_data['created_at'])
+        max_members = self.manager.config.get('GUILD_SYSTEM', {}).get('MAX_MEMBERS', 10)
 
         embed = discord.Embed(
             title=f"🛡️ Informations sur la Guilde: {guild_data['name']}",
             color=discord.Color.from_str(guild_data['color'])
         )
         embed.add_field(name="Chef de Guilde", value=owner.mention)
-        embed.add_field(name="Membres", value=f"{len(guild_data['members'])}/{self.manager.config['GUILD_SYSTEM']['MAX_MEMBERS']}")
-        embed.add_field(name="XP Hebdomadaire", value=f"{guild_data['weekly_xp']} XP")
+        embed.add_field(name="Membres", value=f"{len(guild_data.get('members', []))}/{max_members}")
+        embed.add_field(name="XP Hebdomadaire", value=f"{guild_data.get('weekly_xp', 0)} XP")
         embed.set_footer(text=f"Créée le {discord.utils.format_dt(created_dt, style='D')}")
 
         members_list = []
-        for member_id in guild_data['members']:
+        for member_id in guild_data.get('members', []):
             member = interaction.guild.get_member(int(member_id))
             members_list.append(member.display_name if member else "Utilisateur parti")
         
@@ -229,7 +230,8 @@ class GuildCog(commands.Cog):
         guild_ref = self.manager.db.collection('guilds').document(guild_id)
         guild_data = (await guild_ref.get()).to_dict()
         
-        if len(guild_data.get('members', [])) >= self.manager.config["GUILD_SYSTEM"]["MAX_MEMBERS"]:
+        max_members = self.manager.config.get("GUILD_SYSTEM", {}).get("MAX_MEMBERS", 10)
+        if len(guild_data.get('members', [])) >= max_members:
              return await interaction.response.send_message(f"❌ Votre guilde est pleine.", ephemeral=True)
              
         try:

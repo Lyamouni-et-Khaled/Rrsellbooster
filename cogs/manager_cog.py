@@ -189,11 +189,12 @@ class VerificationView(discord.ui.View):
     
     @discord.ui.button(label="✅ Accepter le règlement", style=discord.ButtonStyle.success, custom_id="verify_member_button")
     async def verify_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        verified_role_name = self.manager.config["ROLES"]["VERIFIED"]
-        unverified_role_name = self.manager.config["ROLES"]["UNVERIFIED"]
+        roles_config = self.manager.config.get("ROLES", {})
+        verified_role_name = roles_config.get("VERIFIED")
+        unverified_role_name = roles_config.get("UNVERIFIED")
         
-        verified_role = discord.utils.get(interaction.guild.roles, name=verified_role_name)
-        unverified_role = discord.utils.get(interaction.guild.roles, name=unverified_role_name)
+        verified_role = discord.utils.get(interaction.guild.roles, name=verified_role_name) if verified_role_name else None
+        unverified_role = discord.utils.get(interaction.guild.roles, name=unverified_role_name) if unverified_role_name else None
 
         if not verified_role:
             return await interaction.response.send_message(f"Erreur : Le rôle `{verified_role_name}` est introuvable.", ephemeral=True)
@@ -215,8 +216,8 @@ class VerificationView(discord.ui.View):
                 referrer_id_str = user_data["referrer"]
                 referrer = interaction.guild.get_member(int(referrer_id_str))
                 if referrer:
-                    xp_config = self.manager.config["GAMIFICATION_CONFIG"]["XP_SYSTEM"]
-                    xp_to_add = xp_config["XP_PER_VERIFIED_INVITE"]
+                    xp_config = self.manager.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {})
+                    xp_to_add = xp_config.get("XP_PER_VERIFIED_INVITE", 100)
                     await self.manager.grant_xp(referrer, xp_to_add, "Parrainage validé")
             
             await self.manager.send_onboarding_dm(interaction.user)
@@ -255,7 +256,9 @@ class TicketTypeSelect(discord.ui.View):
     async def on_select(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         selected_label = self.select_menu.values[0]
-        ticket_type = next(tt for tt in self.manager.config["TICKET_SYSTEM"]["TICKET_TYPES"] if tt['label'] == selected_label)
+        ticket_type = next((tt for tt in self.manager.config.get("TICKET_SYSTEM", {}).get("TICKET_TYPES", []) if tt['label'] == selected_label), None)
+        if not ticket_type:
+             return await interaction.followup.send("Type de ticket invalide.", ephemeral=True)
 
         initial_embed = discord.Embed(title=f"Ticket : {ticket_type['label']}", description="Veuillez décrire votre problème en détail. Un membre du staff sera bientôt avec vous.", color=discord.Color.blue())
         initial_embed.set_footer(text=f"Ticket créé par {interaction.user.display_name}")
@@ -548,7 +551,7 @@ class ManagerCog(commands.Cog):
     async def grant_xp(self, user: discord.Member, source: any, reason: str, _is_achievement_reward: bool = False):
         user_id_str = str(user.id)
         user_ref = self.db.collection('users').document(user_id_str)
-        xp_config = self.config["GAMIFICATION_CONFIG"]["XP_SYSTEM"]
+        xp_config = self.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {})
         
         user_data = await self.get_or_create_user_data(user_ref)
         
@@ -560,10 +563,11 @@ class ManagerCog(commands.Cog):
         xp_to_add = 0
         transaction = self.db.transaction()
         if source == "message":
-            cooldown = xp_config["ANTI_FARM_COOLDOWN_SECONDS"]
+            cooldown = xp_config.get("ANTI_FARM_COOLDOWN_SECONDS", 60)
             last_msg_ts = user_data.get("last_message_timestamp", 0)
             if now.timestamp() - last_msg_ts < cooldown: return
-            xp_to_add = random.randint(*xp_config["XP_PER_MESSAGE"])
+            xp_per_message_range = xp_config.get("XP_PER_MESSAGE", [10, 20])
+            xp_to_add = random.randint(*xp_per_message_range)
             await user_ref.update({"last_message_timestamp": now.timestamp()})
             await self.add_transaction(transaction, user_ref, "message_count", 1, reason)
         elif isinstance(source, int):
@@ -575,18 +579,18 @@ class ManagerCog(commands.Cog):
         total_boost = 1.0
         # VIP Bonus
         vip_data = user_data.get("vip_premium")
-        if vip_data and datetime.fromisoformat(vip_data["expires_at"]) > now:
-            vip_config = self.config["GAMIFICATION_CONFIG"]["VIP_SYSTEM"]["PREMIUM"]
-            sorted_tiers = sorted(vip_config["XP_BOOST_TIERS"], key=lambda x: x["consecutive_months"], reverse=True)
+        if vip_data and datetime.fromisoformat(vip_data.get("expires_at", "1970-01-01T00:00:00+00:00")) > now:
+            vip_config = self.config.get("GAMIFICATION_CONFIG", {}).get("VIP_SYSTEM", {}).get("PREMIUM", {})
+            sorted_tiers = sorted(vip_config.get("XP_BOOST_TIERS", []), key=lambda x: x.get("consecutive_months", 0), reverse=True)
             for tier in sorted_tiers:
-                if vip_data["consecutive_months"] >= tier["consecutive_months"]:
-                    total_boost += tier["boost"]
+                if vip_data.get("consecutive_months", 0) >= tier.get("consecutive_months", 999):
+                    total_boost += tier.get("boost", 0)
                     break
         
         # Check for active XP boosters from shop
         active_boosters = user_data.get("active_boosters", {})
         for booster_id, booster_data in active_boosters.items():
-            if 'xp_booster' in booster_id and datetime.fromisoformat(booster_data['expires_at']) > now:
+            if 'xp_booster' in booster_id and datetime.fromisoformat(booster_data.get('expires_at', "1970-01-01T00:00:00+00:00")) > now:
                 total_boost += booster_data.get('multiplier', 1.0) - 1.0 # e.g., 1.25 -> 0.25
         
         # Event bonus
@@ -611,10 +615,11 @@ class ManagerCog(commands.Cog):
             await self.check_achievements(user)
         
         if leveled_up:
-            channel_name = self.config["CHANNELS"]["LEVEL_UP_ANNOUNCEMENTS"]
-            channel = discord.utils.get(user.guild.text_channels, name=channel_name)
-            if channel:
-                await channel.send(f"🎉 Bravo {user.mention}, tu as atteint le niveau **{new_level}** !")
+            channel_name = self.config.get("CHANNELS", {}).get("LEVEL_UP_ANNOUNCEMENTS")
+            if channel_name:
+                channel = discord.utils.get(user.guild.text_channels, name=channel_name)
+                if channel:
+                    await channel.send(f"🎉 Bravo {user.mention}, tu as atteint le niveau **{new_level}** !")
 
     async def check_referral_milestones(self, user: discord.Member, user_data: dict):
         xp_config = self.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {})
@@ -624,11 +629,11 @@ class ManagerCog(commands.Cog):
         referrer = user.guild.get_member(int(referrer_id_str))
         if not referrer: return
 
-        if user_data["level"] >= 5 and not user_data.get("lvl5_milestone_rewarded"):
+        if user_data.get("level", 1) >= 5 and not user_data.get("lvl5_milestone_rewarded"):
             join_ts = user_data.get("join_timestamp", 0)
             limit_days = xp_config.get("REFERRAL_LVL_5_DAYS_LIMIT", 7)
             if (datetime.now(timezone.utc).timestamp() - join_ts) < (limit_days * 86400):
-                xp_gain = xp_config["XP_BONUS_REFERRAL_HITS_LVL_5"]
+                xp_gain = xp_config.get("XP_BONUS_REFERRAL_HITS_LVL_5", 2000)
                 user_ref = self.db.collection('users').document(str(user.id))
                 await user_ref.update({"lvl5_milestone_rewarded": True})
                 await self.grant_xp(referrer, xp_gain, f"Filleul {user.display_name} a atteint le niveau 5")
@@ -643,17 +648,17 @@ class ManagerCog(commands.Cog):
 
         if user_data.get("xp_gated", False): return False, user_data.get("level", 1)
         
-        xp_config = self.config["GAMIFICATION_CONFIG"]["XP_SYSTEM"]
-        base_xp = xp_config["LEVEL_UP_FORMULA_BASE_XP"]
-        multiplier = xp_config["LEVEL_UP_FORMULA_MULTIPLIER"]
-        old_level = user_data["level"]
+        xp_config = self.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {})
+        base_xp = xp_config.get("LEVEL_UP_FORMULA_BASE_XP", 150)
+        multiplier = xp_config.get("LEVEL_UP_FORMULA_MULTIPLIER", 1.6)
+        old_level = user_data.get("level", 1)
         xp_needed = int(base_xp * (multiplier ** old_level))
         
-        if user_data["xp"] < xp_needed:
+        if user_data.get("xp", 0) < xp_needed:
             return False, old_level
             
         new_level = old_level
-        while user_data["xp"] >= int(base_xp * (multiplier ** new_level)):
+        while user_data.get("xp", 0) >= int(base_xp * (multiplier ** new_level)):
             new_level += 1
         
         transaction = self.db.transaction()
@@ -671,17 +676,17 @@ class ManagerCog(commands.Cog):
         if not user_stats: return
 
         for achievement in self.achievements:
-            if achievement["id"] in user_stats.get("achievements", []): continue
-            trigger = achievement["trigger"]
-            if user_stats.get(trigger["type"], 0) >= trigger["value"]:
+            if achievement.get("id") in user_stats.get("achievements", []): continue
+            trigger = achievement.get("trigger", {})
+            if user_stats.get(trigger.get("type"), 0) >= trigger.get("value", 999999):
                 await self.grant_achievement(user, achievement)
     
     async def grant_achievement(self, user: discord.Member, achievement: dict):
         user_ref = self.db.collection('users').document(str(user.id))
-        await user_ref.update({"achievements": firestore.ArrayUnion([achievement["id"]])})
+        await user_ref.update({"achievements": firestore.ArrayUnion([achievement.get("id")])})
 
         if (xp_reward := achievement.get("reward_xp", 0)) > 0:
-            await self.grant_xp(user, xp_reward, f"Succès: {achievement['name']}", _is_achievement_reward=True)
+            await self.grant_xp(user, xp_reward, f"Succès: {achievement.get('name')}", _is_achievement_reward=True)
         
         # Announcement logic remains the same...
 
@@ -692,13 +697,14 @@ class ManagerCog(commands.Cog):
         if not member: return False, "Membre non trouvé."
         
         buyer_ref = self.db.collection('users').document(str(user_id))
-        price = option['price'] if option else product.get('price', 0)
+        price = option.get('price') if option else product.get('price', 0)
         
         if product.get("type") == "subscription":
              buyer_data = await self.get_or_create_user_data(buyer_ref)
              vip_data = buyer_data.get("vip_premium")
              now = datetime.now(timezone.utc)
-             new_expiry = now + timedelta(days=self.config["GAMIFICATION_CONFIG"]["VIP_SYSTEM"]["PREMIUM"]["DURATION_DAYS"])
+             duration = self.config.get("GAMIFICATION_CONFIG", {}).get("VIP_SYSTEM", {}).get("PREMIUM", {}).get("DURATION_DAYS", 7)
+             new_expiry = now + timedelta(days=duration)
              
              new_vip_data = {
                  "starts_at": now.isoformat(),
@@ -707,9 +713,10 @@ class ManagerCog(commands.Cog):
              }
              await buyer_ref.update({"vip_premium": new_vip_data})
              
-             vip_role_name = self.config["ROLES"]["VIP_PREMIUM"]
-             role = discord.utils.get(guild.roles, name=vip_role_name)
-             if role: await member.add_roles(role)
+             vip_role_name = self.config.get("ROLES", {}).get("VIP_PREMIUM")
+             if vip_role_name:
+                 role = discord.utils.get(guild.roles, name=vip_role_name)
+                 if role: await member.add_roles(role)
 
         transaction = self.db.transaction()
         @async_transactional
@@ -721,7 +728,8 @@ class ManagerCog(commands.Cog):
         
         await purchase_transaction(transaction, buyer_ref, price, credit_used)
 
-        xp_gain = int(price * self.config["GAMIFICATION_CONFIG"]["XP_SYSTEM"]["XP_PER_EURO_SPENT"])
+        xp_per_euro = self.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {}).get("XP_PER_EURO_SPENT", 20)
+        xp_gain = int(price * xp_per_euro)
         await self.grant_xp(member, xp_gain, "Achat")
         await self.check_achievements(member)
         
@@ -743,32 +751,32 @@ class ManagerCog(commands.Cog):
     
     def calculate_commission(self, referrer_data: dict, price: float, product: dict, option: Optional[dict]) -> float:
         """Calculates affiliate commission based on comprehensive rules."""
-        aff_config = self.config["GAMIFICATION_CONFIG"]["AFFILIATE_SYSTEM"]
-        vip_config = self.config["GAMIFICATION_CONFIG"]["VIP_SYSTEM"]["PREMIUM"]
-        guild_config = self.config["GUILD_SYSTEM"]
+        aff_config = self.config.get("GAMIFICATION_CONFIG", {}).get("AFFILIATE_SYSTEM", {})
+        vip_config = self.config.get("GAMIFICATION_CONFIG", {}).get("VIP_SYSTEM", {}).get("PREMIUM", {})
+        guild_config = self.config.get("GUILD_SYSTEM", {})
         now = datetime.now(timezone.utc)
         
         margin_type = product.get("margin_type", "total")
-        commissionable_amount = price - (option.get("purchase_cost") if option else product.get("purchase_cost", 0)) if margin_type == "net" else price
+        commissionable_amount = price - (option.get("purchase_cost", 0) if option else product.get("purchase_cost", 0)) if margin_type == "net" else price
         if commissionable_amount <= 0: return 0.0
 
         guild_bonus = referrer_data.get("guild_bonus", {})
         if guild_bonus.get("type") == 'top1':
-            return commissionable_amount * guild_config["WEEKLY_REWARDS"]["TOP_1"]["commission_rate"]
+            return commissionable_amount * guild_config.get("WEEKLY_REWARDS", {}).get("TOP_1", {}).get("commission_rate", 0.90)
 
-        base_rate = next((t['rate'] for t in sorted(aff_config["COMMISSION_TIERS"], key=lambda x: x['level'], reverse=True) if referrer_data.get("level", 1) >= t['level']), 0)
+        base_rate = next((t.get('rate', 0) for t in sorted(aff_config.get("COMMISSION_TIERS", []), key=lambda x: x.get('level', 0), reverse=True) if referrer_data.get("level", 1) >= t.get('level', 999)), 0)
         
         total_boost = 0.0
         vip_data = referrer_data.get("vip_premium")
-        if vip_data and datetime.fromisoformat(vip_data["expires_at"]) > now:
-            total_boost += next((t['bonus'] for t in sorted(vip_config["COMMISSION_BONUS_TIERS"], key=lambda x: x['consecutive_months'], reverse=True) if vip_data["consecutive_months"] >= t['consecutive_months']), 0)
+        if vip_data and datetime.fromisoformat(vip_data.get("expires_at", "1970-01-01T00:00:00+00:00")) > now:
+            total_boost += next((t.get('bonus', 0) for t in sorted(vip_config.get("COMMISSION_BONUS_TIERS", []), key=lambda x: x.get('consecutive_months', 0), reverse=True) if vip_data.get("consecutive_months", 0) >= t.get('consecutive_months', 999)), 0)
             
         if referrer_data.get("permanent_affiliate_bonus", False):
-            total_boost += aff_config["PERMANENT_LOYALTY_BONUS"]["RATE"]
+            total_boost += aff_config.get("PERMANENT_LOYALTY_BONUS", {}).get("RATE", 0)
             
         active_boosters = referrer_data.get("active_boosters", {})
         for booster_id, booster_data in active_boosters.items():
-            if 'commission_booster' in booster_id and datetime.fromisoformat(booster_data['expires_at']) > now:
+            if 'commission_booster' in booster_id and datetime.fromisoformat(booster_data.get('expires_at', "1970-01-01T00:00:00+00:00")) > now:
                 total_boost += booster_data.get('bonus', 0.0)
                 
         total_boost += referrer_data.get("affiliate_booster", 0.0)
@@ -791,14 +799,14 @@ class ManagerCog(commands.Cog):
         
         if not referrer: return
 
-        cashout_config = self.config["GAMIFICATION_CONFIG"]["AFFILIATE_SYSTEM"]["CASHOUT_COMMISSION"]
+        cashout_config = self.config.get("GAMIFICATION_CONFIG", {}).get("AFFILIATE_SYSTEM", {}).get("CASHOUT_COMMISSION", {})
         guild_bonus = referrer_data.get("guild_bonus", {})
         
-        rate = cashout_config["BASE_RATE"]
+        rate = cashout_config.get("BASE_RATE", 0.05)
         if guild_bonus.get("type") in ['top1', 'top2', 'top3']:
             rate = guild_bonus.get("cashout_commission_rate", 0.10)
         elif referrer_data.get("vip_premium"):
-            rate = cashout_config["VIP_RATE"]
+            rate = cashout_config.get("VIP_RATE", 0.10)
             
         commission_earned = amount_cashed_out * rate
         if commission_earned > 0:
@@ -813,7 +821,7 @@ class ManagerCog(commands.Cog):
 
     async def handle_xp_purchase(self, interaction: discord.Interaction, credits_to_spend: float):
         user_ref = self.db.collection('users').document(str(interaction.user.id))
-        xp_config = self.config["GAMIFICATION_CONFIG"]["XP_SYSTEM"]["XP_PURCHASE"]
+        xp_config = self.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {}).get("XP_PURCHASE", {})
         
         @async_transactional
         async def purchase_xp_tx(transaction, user_ref, credits):
@@ -821,7 +829,7 @@ class ManagerCog(commands.Cog):
             if user_data.get("store_credit", 0) < credits:
                 return {"success": False, "reason": "Fonds insuffisants."}
             
-            cost_per_xp = xp_config["COST_PER_XP_IN_CREDITS"]
+            cost_per_xp = xp_config.get("COST_PER_XP_IN_CREDITS", 0.01)
             # Apply VIP discount if applicable
             xp_gained = math.floor(credits / cost_per_xp)
             
@@ -848,26 +856,32 @@ class ManagerCog(commands.Cog):
 
         user_ref = self.db.collection('users').document(str(interaction.user.id))
         user_data = await self.get_or_create_user_data(user_ref)
-        cashout_config = self.config["GAMIFICATION_CONFIG"]["CASHOUT_SYSTEM"]
+        cashout_config = self.config.get("GAMIFICATION_CONFIG", {}).get("CASHOUT_SYSTEM", {})
 
         if user_data.get("store_credit", 0.0) < amount:
             return await interaction.followup.send(f"❌ Fonds insuffisants. Vous n'avez que {user_data.get('store_credit', 0.0):.2f} crédits.", ephemeral=True)
         
-        if user_data.get("level", 1) < cashout_config["MINIMUM_LEVEL"]:
-            return await interaction.followup.send(f"❌ Vous devez être au moins niveau {cashout_config['MINIMUM_LEVEL']} pour faire un retrait.", ephemeral=True)
+        min_level = cashout_config.get("MINIMUM_LEVEL", 999)
+        if user_data.get("level", 1) < min_level:
+            return await interaction.followup.send(f"❌ Vous devez être au moins niveau {min_level} pour faire un retrait.", ephemeral=True)
         
+        min_age = cashout_config.get("MINIMUM_ACCOUNT_AGE_DAYS", 999)
         account_age_days = (datetime.now(timezone.utc).timestamp() - user_data.get("join_timestamp", 0)) / 86400
-        if account_age_days < cashout_config["MINIMUM_ACCOUNT_AGE_DAYS"]:
-            return await interaction.followup.send(f"❌ Votre compte doit avoir au moins {cashout_config['MINIMUM_ACCOUNT_AGE_DAYS']} jours pour faire un retrait.", ephemeral=True)
+        if account_age_days < min_age:
+            return await interaction.followup.send(f"❌ Votre compte doit avoir au moins {min_age} jours pour faire un retrait.", ephemeral=True)
 
-        threshold = next((t["threshold"] for t in sorted(cashout_config["WITHDRAWAL_THRESHOLDS"], key=lambda x: x['level'], reverse=True) if user_data.get("level", 1) >= t['level']), 1000)
+        threshold = next((t.get("threshold", 1000) for t in sorted(cashout_config.get("WITHDRAWAL_THRESHOLDS", []), key=lambda x: x.get('level', 0), reverse=True) if user_data.get("level", 1) >= t.get('level', 999)), 1000)
         if amount < threshold:
             return await interaction.followup.send(f"❌ Le montant minimum de retrait pour votre niveau est de **{threshold:.2f} crédits**.", ephemeral=True)
         
-        euros_to_send = amount * cashout_config["CREDIT_TO_EUR_RATE"]
+        euros_to_send = amount * cashout_config.get("CREDIT_TO_EUR_RATE", 1.0)
         await self.add_transaction(self.db.transaction(), user_ref, "store_credit", -amount, f"Demande de retrait de {amount:.2f} crédits")
         
-        requests_channel_name = self.config["CHANNELS"]["CASHOUT_REQUESTS"]
+        requests_channel_name = self.config.get("CHANNELS", {}).get("CASHOUT_REQUESTS")
+        if not requests_channel_name:
+            await self.add_transaction(self.db.transaction(), user_ref, "store_credit", amount, "Remboursement - Erreur canal de retrait")
+            return await interaction.followup.send("❌ Erreur critique : le salon des demandes de retrait n'est pas configuré. Votre demande a été annulée et vos crédits restaurés.", ephemeral=True)
+
         channel = discord.utils.get(interaction.guild.text_channels, name=requests_channel_name)
         if not channel:
             await self.add_transaction(self.db.transaction(), user_ref, "store_credit", amount, "Remboursement - Erreur canal de retrait")
@@ -892,9 +906,11 @@ class ManagerCog(commands.Cog):
 
     async def handle_challenge_submission(self, interaction: discord.Interaction, submission_text: str, challenge_type: str):
         await interaction.response.defer(ephemeral=True)
-        mod_alerts_channel_name = self.config["CHANNELS"].get("MOD_ALERTS")
+        mod_alerts_channel_name = self.config.get("CHANNELS", {}).get("MOD_ALERTS")
+        if not mod_alerts_channel_name:
+            return await interaction.followup.send("Erreur: Impossible de soumettre le défi (canal de modération non configuré).", ephemeral=True)
+            
         channel = discord.utils.get(interaction.guild.text_channels, name=mod_alerts_channel_name)
-        
         if not channel:
             return await interaction.followup.send("Erreur: Impossible de soumettre le défi.", ephemeral=True)
         
@@ -913,14 +929,14 @@ class ManagerCog(commands.Cog):
 
         for mission_type in ["current_daily_mission", "current_weekly_mission"]:
             mission = user_data.get(mission_type)
-            if mission and mission['id'] == mission_id and not mission.get('completed', False):
+            if mission and mission.get('id') == mission_id and not mission.get('completed', False):
                 mission['progress'] += progress_amount
-                if mission['progress'] >= mission['target']:
+                if mission.get('progress', 0) >= mission.get('target', 999999):
                     mission['completed'] = True
-                    await self.grant_xp(user, mission['reward_xp'], f"Mission complétée: {mission['description']}")
+                    await self.grant_xp(user, mission.get('reward_xp', 0), f"Mission complétée: {mission.get('description')}")
                     if user_data.get('missions_opt_in', True):
                         try:
-                            await user.send(f"🎉 **Mission accomplie !**\n> {mission['description']}\n**Récompense :** +{mission['reward_xp']} XP")
+                            await user.send(f"🎉 **Mission accomplie !**\n> {mission.get('description')}\n**Récompense :** +{mission.get('reward_xp', 0)} XP")
                         except discord.Forbidden: pass
                 await user_ref.update({mission_type: mission})
                 break
@@ -930,29 +946,29 @@ class ManagerCog(commands.Cog):
         mission_config = self.config.get("MISSION_SYSTEM", {})
         if not mission_config.get("ENABLED", False): return
 
-        daily_templates = [t for t in mission_config["TEMPLATES"] if t["type"] == "daily"]
-        weekly_templates = [t for t in mission_config["TEMPLATES"] if t["type"] == "weekly"]
+        daily_templates = [t for t in mission_config.get("TEMPLATES", []) if t.get("type") == "daily"]
+        weekly_templates = [t for t in mission_config.get("TEMPLATES", []) if t.get("type") == "weekly"]
         is_new_week = datetime.now(timezone.utc).weekday() == 0
 
         users_stream = self.db.collection('users').stream()
         async for user_doc in users_stream:
             new_daily = random.choice(daily_templates)
-            target = random.randint(*new_daily["target_range"])
-            reward = random.randint(*new_daily["reward_xp_range"])
+            target = random.randint(*new_daily.get("target_range", [15,30]))
+            reward = random.randint(*new_daily.get("reward_xp_range", [50,100]))
             
             update_data = {
                 "current_daily_mission": {
-                    "id": new_daily["id"], "description": new_daily["description"].format(target=target),
+                    "id": new_daily.get("id"), "description": new_daily.get("description", "Faire {target} choses.").format(target=target),
                     "target": target, "progress": 0, "reward_xp": reward, "completed": False
                 }
             }
 
             if is_new_week:
                 new_weekly = random.choice(weekly_templates)
-                target_w = random.randint(*new_weekly["target_range"])
-                reward_w = random.randint(*new_weekly["reward_xp_range"])
+                target_w = random.randint(*new_weekly.get("target_range", [100,200]))
+                reward_w = random.randint(*new_weekly.get("reward_xp_range", [300,500]))
                 update_data["current_weekly_mission"] = {
-                    "id": new_weekly["id"], "description": new_weekly["description"].format(target=target_w),
+                    "id": new_weekly.get("id"), "description": new_weekly.get("description", "Faire {target} choses.").format(target=target_w),
                     "target": target_w, "progress": 0, "reward_xp": reward_w, "completed": False
                 }
             
@@ -965,17 +981,18 @@ class ManagerCog(commands.Cog):
         if not vip_config: return
         
         now = datetime.now(timezone.utc)
-        guild = self.bot.get_guild(int(self.config["GUILD_ID"]))
+        guild = self.bot.get_guild(int(self.config.get("GUILD_ID", 0)))
         if not guild: return
         
-        vip_role = discord.utils.get(guild.roles, name=self.config["ROLES"]["VIP_PREMIUM"])
+        vip_role_name = self.config.get("ROLES", {}).get("VIP_PREMIUM")
+        vip_role = discord.utils.get(guild.roles, name=vip_role_name) if vip_role_name else None
         if not vip_role: return
 
         query = self.db.collection('users').where(filter=AsyncFieldFilter('vip_premium', '!=', None)).stream()
         async for doc in query:
             user_data = doc.to_dict()
-            vip_data = user_data["vip_premium"]
-            expires_at = datetime.fromisoformat(vip_data["expires_at"])
+            vip_data = user_data.get("vip_premium", {})
+            expires_at = datetime.fromisoformat(vip_data.get("expires_at", "1970-01-01T00:00:00+00:00"))
             
             if now > expires_at:
                 member = guild.get_member(int(doc.id))
@@ -988,7 +1005,9 @@ class ManagerCog(commands.Cog):
     async def weekly_coaching_report_task(self):
         if not self.model: return
         
-        coach_prompt = self.config["AI_PROCESSING_CONFIG"]["AI_WEEKLY_COACH_PROMPT"]
+        coach_prompt = self.config.get("AI_PROCESSING_CONFIG", {}).get("AI_WEEKLY_COACH_PROMPT")
+        if not coach_prompt: return
+        
         users_query = self.db.collection('users').where('weekly_xp', '>', 10).stream()
 
         async for doc in users_query:
@@ -1032,16 +1051,19 @@ class ManagerCog(commands.Cog):
         users_top_query = self.db.collection('users').where('weekly_xp', '>', 0).order_by('weekly_xp', direction=firestore.Query.DESCENDING).limit(3)
         top_users_docs = [doc async for doc in users_top_query.stream()]
 
-        user_lb_channel = discord.utils.get(guild.text_channels, name=self.config["CHANNELS"]["WEEKLY_LEADERBOARD_ANNOUNCEMENTS"])
+        user_lb_channel_name = self.config.get("CHANNELS", {}).get("WEEKLY_LEADERBOARD_ANNOUNCEMENTS")
+        user_lb_channel = discord.utils.get(guild.text_channels, name=user_lb_channel_name) if user_lb_channel_name else None
+        
         if user_lb_channel:
             embed = discord.Embed(title="🏆 Classement Hebdomadaire des Membres (XP) 🏆", color=discord.Color.gold())
             description = ""
             for i, doc in enumerate(top_users_docs):
                 rank, member = i + 1, guild.get_member(int(doc.id))
                 if member:
-                    if role_to_add := discord.utils.get(guild.roles, name=roles_config.get(f"LEADERBOARD_TOP_{rank}_XP")):
+                    role_name = roles_config.get(f"LEADERBOARD_TOP_{rank}_XP")
+                    if role_name and (role_to_add := discord.utils.get(guild.roles, name=role_name)):
                         await member.add_roles(role_to_add)
-                    description += f"{ {1: '🥇', 2: '🥈', 3: '🥉'}.get(rank, f'**#{rank}**')} **{member.display_name}** - `{doc.to_dict()['weekly_xp']}` XP\n"
+                    description += f"{ {1: '🥇', 2: '🥈', 3: '🥉'}.get(rank, f'**#{rank}**')} **{member.display_name}** - `{doc.to_dict().get('weekly_xp', 0)}` XP\n"
             embed.description = description or "Personne n'a gagné d'XP cette semaine."
             await user_lb_channel.send(embed=embed)
 
@@ -1049,14 +1071,15 @@ class ManagerCog(commands.Cog):
         top_guilds_docs = [doc async for doc in guilds_top_query.stream()]
         
         guild_rewards_config = self.config.get("GUILD_SYSTEM", {}).get("WEEKLY_REWARDS", {})
-        guild_lb_channel = discord.utils.get(guild.text_channels, name=self.config["CHANNELS"].get("GUILD_LEADERBOARD"))
+        guild_lb_channel_name = self.config.get("CHANNELS", {}).get("GUILD_LEADERBOARD")
+        guild_lb_channel = discord.utils.get(guild.text_channels, name=guild_lb_channel_name) if guild_lb_channel_name else None
 
         if guild_lb_channel:
             embed = discord.Embed(title="🛡️ Classement Hebdomadaire des Guildes 🛡️", color=discord.Color.blurple())
             description = ""
             for i, doc in enumerate(top_guilds_docs):
                 rank, guild_data = i + 1, doc.to_dict()
-                description += f"{ {1: '🥇', 2: '🥈', 3: '🥉'}.get(rank, f'**#{rank}**')} **{guild_data['name']}** - `{guild_data['weekly_xp']}` XP\n"
+                description += f"{ {1: '🥇', 2: '🥈', 3: '🥉'}.get(rank, f'**#{rank}**')} **{guild_data.get('name')}** - `{guild_data.get('weekly_xp', 0)}` XP\n"
                 
                 if (reward_key := f"TOP_{rank}") in guild_rewards_config:
                     bonus_data = {**guild_rewards_config[reward_key], "type": f'top{rank}'}
