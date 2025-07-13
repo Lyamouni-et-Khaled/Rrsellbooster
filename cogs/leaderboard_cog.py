@@ -1,10 +1,8 @@
 
-
 import discord
 from discord.ext import commands
 from discord import app_commands
 from typing import Optional, List, Dict, Any
-from google.cloud.firestore_v1.base_query import AsyncFieldFilter
 from google.cloud import firestore
 
 from .manager_cog import ManagerCog
@@ -22,7 +20,7 @@ class LeaderboardCog(commands.Cog):
 
     async def get_leaderboard_data(self, key: str, top_n: int = 10) -> List[Dict[str, Any]]:
         """Gets sorted leaderboard data from Firestore."""
-        query = self.manager.db.collection('users').where(filter=AsyncFieldFilter(key, '>', 0)).order_by(key, direction=firestore.Query.DESCENDING).limit(top_n)
+        query = self.manager.db.collection('users').where(field_path=key, op_string='>', value=0).order_by(key, direction=firestore.Query.DESCENDING).limit(top_n)
         docs = query.stream()
         
         sorted_users = [{"id": doc.id, "value": doc.to_dict().get(key, 0)} async for doc in docs]

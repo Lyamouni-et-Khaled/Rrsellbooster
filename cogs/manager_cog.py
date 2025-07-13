@@ -33,8 +33,7 @@ except ImportError:
 # --- Configuration de Firestore ---
 try:
     from google.cloud import firestore
-    from google.cloud.firestore_v1.base_query import AsyncFieldFilter
-    from google.cloud.firestore_v1.transaction import async_transactional
+    from google.cloud.firestore_v1.async_client import async_transactional
     FIRESTORE_AVAILABLE = True
 except ImportError:
     FIRESTORE_AVAILABLE = False
@@ -802,12 +801,18 @@ class ManagerCog(commands.Cog):
         cashout_config = self.config.get("GAMIFICATION_CONFIG", {}).get("AFFILIATE_SYSTEM", {}).get("CASHOUT_COMMISSION", {})
         guild_bonus = referrer_data.get("guild_bonus", {})
         
+        # Start with the base rate
         rate = cashout_config.get("BASE_RATE", 0.05)
-        if guild_bonus.get("type") in ['top1', 'top2', 'top3']:
-            rate = guild_bonus.get("cashout_commission_rate", 0.10)
+        
+        # Guild bonus takes precedence over all other bonuses
+        guild_bonus_type = guild_bonus.get("type")
+        if guild_bonus_type in ['top1', 'top2', 'top3']:
+            # The cashout_commission_rate is stored in the user's guild_bonus dict
+            rate = guild_bonus.get("cashout_commission_rate", rate)
+        # If no guild bonus applies, check for VIP status
         elif referrer_data.get("vip_premium"):
-            rate = cashout_config.get("VIP_RATE", 0.10)
-            
+            rate = cashout_config.get("VIP_RATE", rate)
+
         commission_earned = amount_cashed_out * rate
         if commission_earned > 0:
             transaction = self.db.transaction()
@@ -988,7 +993,7 @@ class ManagerCog(commands.Cog):
         vip_role = discord.utils.get(guild.roles, name=vip_role_name) if vip_role_name else None
         if not vip_role: return
 
-        query = self.db.collection('users').where(filter=AsyncFieldFilter('vip_premium', '!=', None)).stream()
+        query = self.db.collection('users').where(field_path='vip_premium', op_string='!=', value=None).stream()
         async for doc in query:
             user_data = doc.to_dict()
             vip_data = user_data.get("vip_premium", {})
@@ -1008,7 +1013,7 @@ class ManagerCog(commands.Cog):
         coach_prompt = self.config.get("AI_PROCESSING_CONFIG", {}).get("AI_WEEKLY_COACH_PROMPT")
         if not coach_prompt: return
         
-        users_query = self.db.collection('users').where('weekly_xp', '>', 10).stream()
+        users_query = self.db.collection('users').where(field_path='weekly_xp', op_string='>', value=10).stream()
 
         async for doc in users_query:
             user_data = doc.to_dict()
@@ -1048,7 +1053,7 @@ class ManagerCog(commands.Cog):
         async for user_doc in all_users_stream:
             await user_doc.reference.update({"guild_bonus": {}})
         
-        users_top_query = self.db.collection('users').where('weekly_xp', '>', 0).order_by('weekly_xp', direction=firestore.Query.DESCENDING).limit(3)
+        users_top_query = self.db.collection('users').where(field_path='weekly_xp', op_string='>', value=0).order_by('weekly_xp', direction=firestore.Query.DESCENDING).limit(3)
         top_users_docs = [doc async for doc in users_top_query.stream()]
 
         user_lb_channel_name = self.config.get("CHANNELS", {}).get("WEEKLY_LEADERBOARD_ANNOUNCEMENTS")
@@ -1067,7 +1072,7 @@ class ManagerCog(commands.Cog):
             embed.description = description or "Personne n'a gagné d'XP cette semaine."
             await user_lb_channel.send(embed=embed)
 
-        guilds_top_query = self.db.collection('guilds').where('weekly_xp', '>', 0).order_by('weekly_xp', direction=firestore.Query.DESCENDING).limit(3)
+        guilds_top_query = self.db.collection('guilds').where(field_path='weekly_xp', op_string='>', value=0).order_by('weekly_xp', direction=firestore.Query.DESCENDING).limit(3)
         top_guilds_docs = [doc async for doc in guilds_top_query.stream()]
         
         guild_rewards_config = self.config.get("GUILD_SYSTEM", {}).get("WEEKLY_REWARDS", {})

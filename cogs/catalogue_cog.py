@@ -2,6 +2,7 @@
 
 
 
+
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -196,10 +197,13 @@ class ProductActionView(discord.ui.View):
         embed_ticket.add_field(name="Utilisateur", value=f"{interaction.user.mention} (`{interaction.user.id}`)", inline=False)
         embed_ticket.add_field(name="**Total à payer**", value=f"**{final_price:.2f} {currency}**", inline=True)
         
-        payment_info = self.manager.config["PAYMENT_INFO"]
+        payment_info = self.manager.config.get("PAYMENT_INFO", {})
+        paypal_me_link = payment_info.get('PAYPAL_ME_LINK', 'https://paypal.me/example')
+        paypal_email = payment_info.get('PAYPAL_EMAIL', 'contact@example.com')
+
         embed_ticket.add_field(
             name="Instructions de paiement",
-            value=f"Veuillez envoyer `{final_price:.2f} {currency}` à notre [PayPal.Me]({payment_info['PAYPAL_ME_LINK']}) ou directement à l'adresse `{payment_info['PAYPAL_EMAIL']}`.",
+            value=f"Veuillez envoyer `{final_price:.2f} {currency}` à notre [PayPal.Me]({paypal_me_link}) ou directement à l'adresse `{paypal_email}`.",
             inline=False
         )
         embed_ticket.add_field(

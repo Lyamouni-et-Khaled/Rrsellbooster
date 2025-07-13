@@ -126,7 +126,7 @@ class GiveawayCog(commands.Cog):
     async def check_giveaways(self):
         now_iso = datetime.now(timezone.utc).isoformat()
         
-        ended_giveaways_query = self.manager.db.collection('giveaways').where('end_time', '<=', now_iso)
+        ended_giveaways_query = self.manager.db.collection('giveaways').where(field_path='end_time', op_string='<=', value=now_iso)
         ended_giveaways_stream = ended_giveaways_query.stream()
 
         async for giveaway_doc in ended_giveaways_stream:
