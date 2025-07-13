@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any
 import json
 from datetime import datetime, timedelta, timezone
 from google.cloud import firestore
-from google.cloud.firestore_v1.async_client import async_transactional
+from google.cloud.firestore_v1.transaction import async_transactional
 
 from .manager_cog import ManagerCog
 from .lottery_cog import LotteryCog

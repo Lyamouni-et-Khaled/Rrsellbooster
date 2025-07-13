@@ -9,7 +9,7 @@ import uuid
 
 from .manager_cog import ManagerCog
 from google.cloud import firestore
-from google.cloud.firestore_v1.async_client import async_transactional
+from google.cloud.firestore_v1.transaction import async_transactional
 
 def is_hex_color(s: str) -> bool:
     if not s: return False
@@ -113,7 +113,7 @@ class GuildCog(commands.Cog):
         if user_data.get("guild_id"):
             return await interaction.response.send_message("❌ Vous êtes déjà dans une guilde.", ephemeral=True)
             
-        existing_guild_query = self.manager.db.collection('guilds').where(field_path='name_lower', op_string='==', value=nom.lower()).limit(1).stream()
+        existing_guild_query = self.manager.db.collection('guilds').where('name_lower', '==', nom.lower()).limit(1).stream()
         if len([doc async for doc in existing_guild_query]) > 0:
             return await interaction.response.send_message("❌ Une guilde avec ce nom existe déjà.", ephemeral=True)
 
@@ -182,7 +182,7 @@ class GuildCog(commands.Cog):
         
         guild_data = None
         if nom:
-            query = self.manager.db.collection('guilds').where(field_path='name_lower', op_string='==', value=nom.lower()).limit(1).stream()
+            query = self.manager.db.collection('guilds').where('name_lower', '==', nom.lower()).limit(1).stream()
             async for doc in query: guild_data = doc.to_dict()
         else:
             user_data = await self.manager.get_or_create_user_data(self.manager.db.collection('users').document(str(interaction.user.id)))

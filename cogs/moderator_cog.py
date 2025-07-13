@@ -13,7 +13,7 @@ import uuid
 from .manager_cog import ManagerCog
 from .catalogue_cog import PurchasePromoView
 from google.cloud import firestore
-from google.cloud.firestore_v1.async_client import async_transactional
+from google.cloud.firestore_v1.transaction import async_transactional
 
 # Importation de la librairie Gemini
 try:
