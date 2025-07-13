@@ -6,6 +6,7 @@ from typing import Optional, List, Dict, Any
 import json
 from datetime import datetime, timedelta, timezone
 from google.cloud import firestore
+from google.cloud.firestore_v1.transaction import async_transactional
 
 from .manager_cog import ManagerCog
 from .lottery_cog import LotteryCog
@@ -69,7 +70,7 @@ class CreditShopView(discord.ui.View):
     async def handle_booster_purchase(self, interaction: discord.Interaction, item: Dict[str, Any]):
         user_ref = self.manager.db.collection('users').document(str(interaction.user.id))
         
-        @firestore.async_transactional
+        @async_transactional
         async def purchase_booster_tx(trans, ref, item_data):
             user_data = (await ref.get(transaction=trans)).to_dict()
             cost = item_data['cost']
