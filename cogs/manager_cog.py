@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands, tasks
 from discord import app_commands
@@ -17,7 +16,8 @@ import re
 # Placer l'importation de Firestore ici, en dehors du try/except,
 # pour qu'une erreur d'importation soit immédiatement visible et arrête le bot.
 from google.cloud import firestore
-from google.cloud.firestore_v1.transaction import async_transactional
+# FIX: Changed the import style to be more robust against circular dependencies.
+from google.cloud.firestore_v1 import transaction 
 
 # --- Dépendances Optionnelles ---
 try:
@@ -47,12 +47,12 @@ class MissionView(discord.ui.View):
         user_id_str = str(interaction.user.id)
         user_ref = self.manager.db.collection('users').document(user_id_str)
         
-        @async_transactional
-        async def toggle_opt_in(transaction, ref):
-            user_doc = await ref.get(transaction=transaction)
+        @transaction.async_transactional # FIX: Using the imported transaction module
+        async def toggle_opt_in(trans, ref): # trans is the conventional name for the transaction object
+            user_doc = await ref.get(transaction=trans)
             user_data = user_doc.to_dict() if user_doc.exists else {}
             new_status = not user_data.get("missions_opt_in", True)
-            transaction.set(ref, {"missions_opt_in": new_status}, merge=True)
+            trans.set(ref, {"missions_opt_in": new_status}, merge=True)
             return new_status
 
         new_status = await toggle_opt_in(self.manager.db.transaction(), user_ref)
@@ -145,9 +145,9 @@ class CashoutRequestView(discord.ui.View):
             await interaction.message.edit(embed=new_embed)
             await interaction.followup.send("Demande approuvée.", ephemeral=True)
         else: # Deny
-            transaction = self.manager.db.transaction()
+            tx = self.manager.db.transaction()
             await self.manager.add_transaction(
-                transaction,
+                tx,
                 user_ref,
                 "store_credit",
                 cashout_dict['credit_to_deduct'],
@@ -470,9 +470,9 @@ class ManagerCog(commands.Cog):
             await user_ref.set({"referrer": str(inviter.id)}, merge=True)
             
             inviter_ref = self.db.collection('users').document(str(inviter.id))
-            transaction = self.db.transaction()
+            tx = self.db.transaction()
             await self.add_transaction(
-                transaction, inviter_ref,
+                tx, inviter_ref,
                 "referral_count", 1, f"Parrainage de {member.name}"
             )
             print(f"{member.name} a été invité par {inviter.name}")
@@ -517,9 +517,9 @@ class ManagerCog(commands.Cog):
         print(f"Nouvel utilisateur initialisé dans Firestore : {user_ref.id}")
         return default_data
 
-    @async_transactional
-    async def add_transaction(self, transaction: firestore.AsyncTransaction, user_ref: firestore.AsyncDocumentReference, type: str, amount: any, description: str):
-        user_doc = await user_ref.get(transaction=transaction)
+    @transaction.async_transactional # FIX: Using the imported transaction module
+    async def add_transaction(self, trans: firestore.AsyncTransaction, user_ref: firestore.AsyncDocumentReference, type: str, amount: any, description: str):
+        user_doc = await user_ref.get(transaction=trans)
         user_data = user_doc.to_dict() if user_doc.exists else await self.get_or_create_user_data(user_ref)
         
         new_value = user_data.get(type, 0) + amount
@@ -539,7 +539,7 @@ class ManagerCog(commands.Cog):
             type: new_value,
             "transaction_log": transaction_log
         }
-        transaction.update(user_ref, update_payload)
+        trans.update(user_ref, update_payload)
 
     async def grant_xp(self, user: discord.Member, source: any, reason: str, _is_achievement_reward: bool = False):
         user_id_str = str(user.id)
@@ -554,7 +554,7 @@ class ManagerCog(commands.Cog):
         now = datetime.now(timezone.utc)
         
         xp_to_add = 0
-        transaction = self.db.transaction()
+        tx = self.db.transaction()
         if source == "message":
             cooldown = xp_config.get("ANTI_FARM_COOLDOWN_SECONDS", 60)
             last_msg_ts = user_data.get("last_message_timestamp", 0)
@@ -562,7 +562,7 @@ class ManagerCog(commands.Cog):
             xp_per_message_range = xp_config.get("XP_PER_MESSAGE", [10, 20])
             xp_to_add = random.randint(*xp_per_message_range)
             await user_ref.update({"last_message_timestamp": now.timestamp()})
-            await self.add_transaction(transaction, user_ref, "message_count", 1, reason)
+            await self.add_transaction(tx, user_ref, "message_count", 1, reason)
         elif isinstance(source, int):
             xp_to_add = source
         
@@ -590,7 +590,7 @@ class ManagerCog(commands.Cog):
         event_multiplier = self.active_events.get("double_xp", {}).get("multiplier", 1.0)
         final_xp = int(xp_to_add * total_boost * event_multiplier)
         
-        @async_transactional
+        @transaction.async_transactional # FIX: Using the imported transaction module
         async def _update_xp_and_guild(trans, user_ref, guild_ref, final_xp, reason):
             await self.add_transaction(trans, user_ref, "xp", final_xp, reason)
             await self.add_transaction(trans, user_ref, "weekly_xp", final_xp, f"Gain hebdomadaire: {reason}")
@@ -654,8 +654,8 @@ class ManagerCog(commands.Cog):
         while user_data.get("xp", 0) >= int(base_xp * (multiplier ** new_level)):
             new_level += 1
         
-        transaction = self.db.transaction()
-        await self.add_transaction(transaction, user_ref, "level", new_level - old_level, "Montée de niveau")
+        tx = self.db.transaction()
+        await self.add_transaction(tx, user_ref, "level", new_level - old_level, "Montée de niveau")
         
         await self.check_referral_milestones(user, user_data)
         # DM logic and role rewards...
@@ -711,15 +711,15 @@ class ManagerCog(commands.Cog):
                  role = discord.utils.get(guild.roles, name=vip_role_name)
                  if role: await member.add_roles(role)
 
-        transaction = self.db.transaction()
-        @async_transactional
+        tx = self.db.transaction()
+        @transaction.async_transactional # FIX: Using the imported transaction module
         async def purchase_transaction(trans, buyer_ref, price, credit_used):
             await self.add_transaction(trans, buyer_ref, "purchase_count", 1, "Achat")
             await self.add_transaction(trans, buyer_ref, "purchase_total_value", price, "Achat")
             if credit_used > 0:
                 await self.add_transaction(trans, buyer_ref, "store_credit", -credit_used, "Achat avec crédit")
         
-        await purchase_transaction(transaction, buyer_ref, price, credit_used)
+        await purchase_transaction(tx, buyer_ref, price, credit_used)
 
         xp_per_euro = self.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {}).get("XP_PER_EURO_SPENT", 20)
         xp_gain = int(price * xp_per_euro)
@@ -809,10 +809,10 @@ class ManagerCog(commands.Cog):
 
         commission_earned = amount_cashed_out * rate
         if commission_earned > 0:
-            transaction = self.db.transaction()
-            await self.add_transaction(transaction, referrer_ref, "store_credit", commission_earned, f"Commission sur cashout de {referral_member.display_name}")
-            await self.add_transaction(transaction, referrer_ref, "affiliate_earnings", commission_earned, "Gain d'affiliation (cashout)")
-            await self.add_transaction(transaction, referrer_ref, "weekly_affiliate_earnings", commission_earned, "Gain d'affiliation hebdo (cashout)")
+            tx = self.db.transaction()
+            await self.add_transaction(tx, referrer_ref, "store_credit", commission_earned, f"Commission sur cashout de {referral_member.display_name}")
+            await self.add_transaction(tx, referrer_ref, "affiliate_earnings", commission_earned, "Gain d'affiliation (cashout)")
+            await self.add_transaction(tx, referrer_ref, "weekly_affiliate_earnings", commission_earned, "Gain d'affiliation hebdo (cashout)")
             try:
                 await referrer.send(f"💸 Votre filleul {referral_member.display_name} a retiré de l'argent ! Vous gagnez une commission de **{commission_earned:.2f} crédits**.")
             except discord.Forbidden: pass
@@ -822,9 +822,9 @@ class ManagerCog(commands.Cog):
         user_ref = self.db.collection('users').document(str(interaction.user.id))
         xp_config = self.config.get("GAMIFICATION_CONFIG", {}).get("XP_SYSTEM", {}).get("XP_PURCHASE", {})
         
-        @async_transactional
-        async def purchase_xp_tx(transaction, user_ref, credits):
-            user_data = (await user_ref.get(transaction=transaction)).to_dict()
+        @transaction.async_transactional # FIX: Using the imported transaction module
+        async def purchase_xp_tx(trans, user_ref, credits):
+            user_data = (await user_ref.get(transaction=trans)).to_dict()
             if user_data.get("store_credit", 0) < credits:
                 return {"success": False, "reason": "Fonds insuffisants."}
             
@@ -832,8 +832,8 @@ class ManagerCog(commands.Cog):
             # Apply VIP discount if applicable
             xp_gained = math.floor(credits / cost_per_xp)
             
-            await self.add_transaction(transaction, user_ref, "store_credit", -credits, f"Achat de {xp_gained} XP")
-            await self.add_transaction(transaction, user_ref, "xp", xp_gained, f"Achat avec {credits} crédits")
+            await self.add_transaction(trans, user_ref, "store_credit", -credits, f"Achat de {xp_gained} XP")
+            await self.add_transaction(trans, user_ref, "xp", xp_gained, f"Achat avec {credits} crédits")
             
             return {"success": True, "xp_gained": xp_gained}
 
@@ -1106,3 +1106,4 @@ class ManagerCog(commands.Cog):
         await self.bot.wait_until_ready()
     
     # ... The rest of the file would be similarly refactored
+
