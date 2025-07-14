@@ -1,4 +1,3 @@
-
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -186,7 +185,8 @@ class ModeratorCog(commands.Cog):
                 await self.notify_staff(member.guild, f"Seuil d'avertissement atteint pour {member.mention}", "L'utilisateur a été mis en silencieux pour 24h.")
                 await user_ref.update({'warnings': 0})
             except discord.Forbidden:
-                 await self.notify_staff(member.guild, f"ERREUR: Tentative de Mute sur {member.mention} a échoué (permissions).", "Seuil d'avertissement atteint.")
+                # FIX: Corrected indentation on the following line
+                await self.notify_staff(member.guild, f"ERREUR: Tentative de Mute sur {member.mention} a échoué (permissions).", "Seuil d'avertissement atteint.")
 
     promo = app_commands.Group(name="promo", description="[Admin] Commandes pour gérer les promotions flash.", default_permissions=discord.Permissions(administrator=True))
 
@@ -241,3 +241,4 @@ class ModeratorCog(commands.Cog):
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(ModeratorCog(bot))
+
