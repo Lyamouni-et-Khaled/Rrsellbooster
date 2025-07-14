@@ -1,20 +1,12 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-import json
+import json, os, re, uuid, asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional
-import os
-import re
-import uuid
-
-# Importation de ManagerCog pour l'autocomplétion
-from .manager_cog import ManagerCog
-from .catalogue_cog import PurchasePromoView
 from google.cloud import firestore
-from google.cloud.firestore_v1.transaction import async_transactional
+from google.cloud.firestore_v1 import transaction
 
-# Importation de la librairie Gemini
 try:
     import google.generativeai as genai
     from google.generativeai.types import GenerationConfig
@@ -22,23 +14,26 @@ try:
 except ImportError:
     AI_AVAILABLE = False
 
+# FIX: On importe la vue depuis son propre fichier pour éviter les dépendances
+from .catalogue_cog import PurchasePromoView
+
 class ModeratorCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.manager: Optional[ManagerCog] = None
+        self.manager: Optional['ManagerCog'] = None
         self.model: Optional[genai.GenerativeModel] = None
 
     async def cog_load(self):
-        # Cette méthode est appelée lors du chargement du cog.
+        await asyncio.sleep(1) 
         self.manager = self.bot.get_cog('ManagerCog')
         if not self.manager:
-            return print("ERREUR CRITIQUE: ModeratorCog n'a pas pu trouver le ManagerCog.")
+            return print(f"❌ ERREUR CRITIQUE: {self.__class__.__name__} n'a pas pu trouver le ManagerCog.")
         
         if AI_AVAILABLE and self.manager.model:
             self.model = self.manager.model
-            print("✅ Moderator Cog: Modèle Gemini partagé par ManagerCog chargé.")
+            print(f"✅ {self.__class__.__name__}: Modèle Gemini partagé.")
         else:
-            print("⚠️ ATTENTION: ModeratorCog désactivé car aucun modèle AI n'est disponible.")
+            print(f"⚠️ ATTENTION: {self.__class__.__name__} n'a pas pu charger le modèle AI.")
 
     async def query_gemini_moderation(self, message: discord.Message) -> Optional[Dict[str, Any]]:
         if not self.model or not self.manager: return None
